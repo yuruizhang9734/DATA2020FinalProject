@@ -1,0 +1,418 @@
+---
+title: "DATA2020FinalProject_plan"
+author: "Hanjun Wei, Keying Gong, Yurui Zhang"
+date: "4/26/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Data
+
+The data our group uses is the Police Shootings in the US: <https://www.washingtonpost.com/graphics/investigations/police-shootings-database/>
+
+### Question
+
+The question we are interested in:
+1. Analyze historical fatal shootings based on demographic groups
+2. predict 2022 fatal shootings using time-series model for the whole population and for different racial groups
+
+### Our brief plan
+
+
+
+#### Step 1: data cleaning and conduct feature engineering 
+#### Step 2: Exploratory Data Analysis on the police shooting dataset. Discover interesting patterns
+#### Step 3: Compare race composition of each state VS. fatal shootings race composition by state
+#### Step 4:
+
+(Time Series Modeling)
+build ARIMA model to predict 2022 fatal shootings using time-series model for the whole population and for different racial groups
+
+
+(Racial Mixed Effect Modeling)
+Reconstruct the dataset in terms of Race. 
+
+
+Feature #1 is Racial Category, which includes 7 types of race.
+
+
+Feature #2 is Number of Fatal Shooting at each time stamp, count the total number of fatal shootings in a given time interval.
+
+
+Feature #3 is Time Stamp, month and year.
+Construct a mixed effect modeling in terms of the number of fatal shootings.
+
+
+(State Mixed Effect Modeling)
+Reconstruct the dataset in terms of State. 
+
+
+Feature #1 is State Category, which includes 50 types of state.
+
+
+Feature #2 is Number of Fatal Shooting at each time stamp, count the total number of fatal shootings in a given time interval.
+
+
+Feature #3 is Time Stamp, month and year.
+Construct a mixed effect modeling in terms of the number of fatal shootings.
+
+
+
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Load the needed packages
+library(dplyr)
+library(caret)
+library(glmnet)
+library(MASS)
+library(InformationValue)
+library(tidyverse)
+library(naniar)
+library(ggplot2)
+library(lubridate)
+library(visdat)
+library(finalfit)
+library(GGally)
+library(ggmap)
+library(tidygeocoder)
+library(usmap)
+```
+
+### Data Cleaning first
+
+First thing first, read the data into the file.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Load the needed dataset
+data_shoot <- read_csv("~/Desktop/Brown/Brown_class/2022_Spring/DATA2020/Final_project/data-police-shootings-master/fatal-police-shootings-data.csv")
+
+# make a copy of the readed in data just in case
+data_shoot_not_change <- data_shoot
+```
+
+Print out the first 10 rows to better understand the data.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+head(data_shoot, 10)
+```
+
+Looks good to me.
+
+let us print the names of all of the columns to see if it matches our key table.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+names(data_shoot)
+```
+
+Then after we read in the data, we can take a look at some characteristic of the data, First of all, we print out the shape of the data.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+print(dim(data_shoot))
+```
+
+We have 7291 rows and 17 columns.
+
+we want to know the exact percentage of missing value in each columns, so we print out the percentage of not missing values in our datasets.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Missing data - to check the percent of not missing data points in each columns
+apply(data_shoot, 2, function(x) sum(complete.cases(x))/nrow(data_shoot))
+```
+
+From the plot, we can see that there are missing values in name, armed, age, gender, race, flee, longitude, and latitude.
+
+Then we will run the missing pattern plots to take a better look at the missineness.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+vis_miss(data_shoot)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+missing_pattern(data_shoot)
+```
+
+For our variable "id", from the code book, this should be the continuous variable that contains the id information.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable manner_of_death
+length(unique(data_shoot$id))
+```
+
+For our variable "name", from the code book, this should be the categorical variable that contains the id information.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable name
+length(unique(data_shoot$name))
+```
+
+For our variable "date", from the code book, this should be the date variable. So we add the Year, Month and WeekDay new variables.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable manner_of_death
+length(unique(data_shoot$date))
+
+data_shoot$Year <- year(data_shoot$date)
+data_shoot$Month <- month(data_shoot$date)
+data_shoot$WeekDay <- weekdays(data_shoot$date)
+
+data_shoot$Year <- as.factor(data_shoot$Year)
+data_shoot$Month <- as.factor(data_shoot$Month)
+data_shoot$WeekDay <- as.factor(data_shoot$WeekDay)
+
+```
+
+For our variable "manner_of_death", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable manner_of_death
+unique(data_shoot$manner_of_death)
+data_shoot$manner_of_death <- as.factor(data_shoot$manner_of_death)
+```
+
+For our variable "armed", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable armed
+# long_dis_death, long_dis_not_death, short_dis_death, short_dis_not_death,
+
+
+long_dis_death <- c("gun","guns and explosives","crossbow","gun and knife","hatchet and gun","machete and gun","gun and sword","gun and car","pellet gun","bow and arrow","gun and vehicle","vehicle and gun","grenade","air pistol","gun and machete")
+long_dis_not_death <- c("toy weapon","nail gun","BB gun","Taser","bean-bag gun","hand torch","pepper spray","fireworks","incendiary device","Airsoft pistol")
+short_dis_death <- c("knife","hatchet","sword","machete","sharp object","meat cleaver","straight edge razor","ax","chain saw","scissors","pick-axe","spear","pitchfork","glass shard","metal rake","pole and knife","chainsaw","samurai sword","baseball bat and knife","ice pick","machete and hammer")
+short_dis_not_death <- c("shovel","hammer","box cutter","metal object","screwdriver","lawn mower blade","flagpole","cordless drill","metal pole","metal pipe","metal hand tool","blunt object","metal stick","chain","contractor's level","railroad spikes","stapler","beer bottle","binoculars","baseball bat and fireplace poker","brick","baseball bat","garden tool","pipe","flashlight","baton","chair","rock","piece of wood","pole","crowbar","oar","tire iron","air conditioner","baseball bat and bottle","pen","wrench","walking stick","barstool","wasp spray","bottle","microphone","stake")
+vehicles <- c("vehicle","carjack","motorcycle","BB gun and vehicle","vehicle and machete","car, knife and mace","knife and vehicle")
+undetermined <- c("undetermined","unknown weapon","claimed to be armed")
+unarmed <- c("unarmed")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+data_shoot[is.na(data_shoot$armed)==FALSE & data_shoot$armed %in% long_dis_death, "armed_level"] <- "long_dis_death"
+
+data_shoot[is.na(data_shoot$armed)==FALSE & data_shoot$armed %in% long_dis_not_death, "armed_level"] <- "long_dis_not_death"
+
+data_shoot[is.na(data_shoot$armed)==FALSE & data_shoot$armed %in% short_dis_death, "armed_level"] <- "short_dis_death"
+
+data_shoot[is.na(data_shoot$armed)==FALSE & data_shoot$armed %in% short_dis_not_death, "armed_level"] <- "short_dis_not_death"
+
+data_shoot[is.na(data_shoot$armed)==FALSE & data_shoot$armed %in% vehicles, "armed_level"] <- "vehicles"
+
+data_shoot[is.na(data_shoot$armed)==FALSE & data_shoot$armed %in% undetermined, "armed_level"] <- "undetermined"
+
+data_shoot[is.na(data_shoot$armed)==FALSE & data_shoot$armed %in% unarmed, "armed_level"] <- "unarmed"
+
+data_shoot$armed_level <- as.factor(data_shoot$armed_level)
+
+```
+
+For our variable "age", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable armed
+# divide into several ranges
+
+unique(data_shoot$age)
+
+data_shoot[is.na(data_shoot$age)==FALSE & data_shoot$age > 14 & data_shoot$age <= 44, "age_group"] <- "15-44"
+data_shoot[is.na(data_shoot$age) == FALSE & data_shoot$age > 44 & data_shoot$age <= 64, "age_group"] <- "45-64"
+data_shoot[is.na(data_shoot$age) == FALSE & data_shoot$age > 64, "age_group"] <- "> 64"
+
+
+unique(data_shoot$age_group)
+
+data_shoot$age_group <- as.factor(data_shoot$age_group)
+```
+
+For our variable "gender", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable gender
+unique(data_shoot$gender)
+data_shoot$gender <- as.factor(data_shoot$gender)
+```
+
+For our variable "race", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable armed
+unique(data_shoot$race)
+data_shoot$race <- as.factor(data_shoot$race)
+```
+
+For our variable "city", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable armed
+length(unique(data_shoot$city))
+```
+
+For our variable "state", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# For our variable armed
+unique(data_shoot$state)
+data_shoot$state <- as.factor(data_shoot$state)
+
+north_east <- c("MA", "RI", "CT", "VT", "NH", "ME", "PA", "NJ", "NY")
+south_east <- c("DC", "GA", "NC", "SC", "VA", "WV", "KY", "TN", "MS", "AL", "DE", "MD", "FL", "LA", "AR")
+mid_west <- c("MN", "WI", "IL", "OH", "IN", "MI", "MO", "IA", "KS", "NE", "ND", "SD")
+south_west <- c("NM", "AZ", "OK", "TX")
+the_west <- c("CA", "CO", "NV", "HI", "AK", "OR", "UT", "ID", "MT", "WY", "WA")
+
+data_shoot[is.na(data_shoot$state)==FALSE & data_shoot$state %in% north_east, "state_loc"] <- "north_east"
+
+data_shoot[is.na(data_shoot$state)==FALSE & data_shoot$state %in% south_east, "state_loc"] <- "south_east"
+
+data_shoot[is.na(data_shoot$state)==FALSE & data_shoot$state %in% mid_west, "state_loc"] <- "mid_west"
+
+data_shoot[is.na(data_shoot$state)==FALSE & data_shoot$state %in% south_west, "state_loc"] <- "south_west"
+
+data_shoot[is.na(data_shoot$state)==FALSE & data_shoot$state %in% the_west, "state_loc"] <- "the_west"
+
+unique(data_shoot$state_loc)
+
+data_shoot$state_loc <- as.factor(data_shoot$state_loc)
+
+```
+
+For our variable "signs_of_mental_illness", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+unique(data_shoot$signs_of_mental_illness)
+data_shoot$signs_of_mental_illness <- as.factor(data_shoot$signs_of_mental_illness)
+```
+
+For our variable "threat_level", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+unique(data_shoot$threat_level)
+data_shoot$threat_level <- as.factor(data_shoot$threat_level)
+```
+
+For our variable "flee", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+unique(data_shoot$flee)
+data_shoot$flee <- as.factor(data_shoot$flee)
+```
+
+For our variable "body_camera", from the code book, this should be the categorical variable.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+unique(data_shoot$body_camera)
+data_shoot$body_camera <- as.factor(data_shoot$body_camera)
+```
+
+Now we have to create two new datasets, one for eda and analysis, one for creating model.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+names(data_shoot)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+data_shoot_eda <- data_shoot %>% dplyr::select(c("manner_of_death","age","gender","race","city","state","signs_of_mental_illness","threat_level","flee","body_camera","longitude","latitude","is_geocoding_exact","Year","Month","WeekDay","armed_level","age_group","state_loc"))
+
+data_shoot_model <- data_shoot %>% dplyr::select(c("date","manner_of_death","age","gender","race","city","state","signs_of_mental_illness","threat_level","flee","body_camera","longitude","latitude","is_geocoding_exact","armed_level","age_group","state_loc"))
+
+```
+
+
+### EDA So far
+
+```{r, echo=FALSE}
+print(summary(data_shoot_eda))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = manner_of_death)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = gender)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = race)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = signs_of_mental_illness)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = threat_level)) +
+  geom_bar()
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = body_camera)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = Year)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = armed_level)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x = state_loc)) +
+  geom_bar()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist(data_shoot_eda$age)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data_shoot_eda, aes(x=race, y= age)) + 
+        geom_boxplot()
+
+```
+
+```{r}
+geo(address = c("Tokyo", "Lima", "Nairobi"),
+ method = 'osm')
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(rworldmap)
+# get map
+worldmap <- getMap(resolution = "coarse")
+plot(worldmap, xlim = c(-80, 160), ylim = c(-50, 100), 
+     asp = 1, bg = "lightblue", col = "black", fill = T)
+points(data_shoot$Longitude, data_shoot$Latitude, 
+       col = "red", cex = .01)
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+plot_loc <- ggplot(data_shoot_eda, aes(x=longitude, y=latitude)) + geom_point()
+print(plot_loc + ggtitle("police killed people locations all over us"))
+
+```
+
+
+
+
+
+
